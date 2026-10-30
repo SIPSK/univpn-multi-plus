@@ -1,0 +1,3 @@
+* text=auto eol=lf
+# Vendored hashes cover exact bytes, including BOM and line endings.
+vendor/** -text

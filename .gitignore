@@ -1,0 +1,57 @@
+# Python and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+.build-venv/
+venv/
+*.egg-info/
+
+# Build products and private official installer inputs
+/build/
+/dist/
+/official/
+/official-source/
+*.spec
+*.exe
+*.msi
+*.cms
+*.crl
+*.zip
+
+# Frontend dependencies and generated artifacts
+node_modules/
+/web/tests/artifacts/
+playwright-report/
+test-results/
+
+# Local runtime data and credentials
+/runtime/
+/runtime-*/
+/vendor-backups/
+profiles.json
+source-links.json
+manager.json
+runtime.json
+token
+*.token
+native-events.json
+*.log
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Editor and OS state
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

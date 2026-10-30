@@ -1,0 +1,16 @@
+{
+  "name": "univpn-multi-plus",
+  "version": "0.2.5",
+  "private": true,
+  "description": "Local mock-browser regression tests for the UniVPN manager",
+  "scripts": {
+    "test": "npm run test:frontend",
+    "test:frontend": "node web/tests/frontend.test.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}
