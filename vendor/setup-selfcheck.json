@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "mode": "read-only diagnostics",
+  "supportedClientBuild": "10781.19.0.1214",
+  "bundledCreationScriptSHA256": "e89190659105f451829bf67f5a0a8d609be120e01a484176a17f88ae64577230",
+  "credentials": {
+    "readVendorAppData": false,
+    "migrateVendorCredentials": false,
+    "overwriteKeys": false
+  },
+  "checks": [
+    {
+      "id": "platform-and-official-build",
+      "read": "Windows x64, official installation path and the three original executable SHA256 values",
+      "failure": "Preserve the installed client. Ask for the exact supported official build. Never overwrite or downgrade another installed version."
+    },
+    {
+      "id": "protected-installation",
+      "read": "Program Files source, owners, write ACLs and reparse-point status",
+      "failure": "Refuse privileged actions. Do not relax permissions automatically."
+    },
+    {
+      "id": "owned-instance",
+      "read": "One Ready instance record, matching index and junction, exactly three protected executable hashes, dedicated TAP GUID",
+      "failure": "Retain incomplete instances and TAPs for inspection. Do not create another instance automatically and do not remove an adapter."
+    },
+    {
+      "id": "own-service",
+      "read": "Only the selected UniVPNService or UVP###Service; exact quoted binary path and LocalSystem identity",
+      "repair": "Explicit EnsureService may create a missing Manual service or start the matching existing service. Existing start type is preserved. Only the current user may gain START|QUERY_STATUS (0x14).",
+      "failure": "Reject foreign ownership. Never overwrite, stop, delete or reconfigure another service."
+    },
+    {
+      "id": "own-entrypoint",
+      "read": "Selected instance Open-UniVPN command and its fixed protected versioned script target",
+      "repairScope": "Only an entrypoint belonging to the same verified index may be restored. No arbitrary script or target path is accepted.",
+      "automaticRepair": false
+    },
+    {
+      "id": "creation-idle",
+      "read": "All native VPN UI/backend processes and all TAP adapter link states, before and after elevation and creation",
+      "failure": "Refuse creation while any client/backend is present or any TAP is Up. Never disconnect another VPN automatically."
+    }
+  ],
+  "creation": {
+    "entry": "tools/native-action.ps1 -Mode CreateInstance -Index 1 -SourceDirectory <verified-source> -Nonce <32hex>",
+    "upstreamMode": "CreateOnly",
+    "requiresExplicitUserAction": true,
+    "nativeClientOpened": false,
+    "result": {"ok": true, "index": "the single newly Ready index"},
+    "resultLocation": "<verified-source>/.univpn-multi/manager-results/<nonce>.json"
+  }
+}
