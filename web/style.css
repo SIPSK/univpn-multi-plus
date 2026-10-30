@@ -1,0 +1,118 @@
+:root {
+  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  color: #21272f;
+  background: #f6f7f8;
+  font-synthesis: none;
+  --muted: #7b8490;
+  --border: #e7eaee;
+  --focus: #416dd0;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: .45; }
+button, input { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, summary:focus-visible { outline: 3px solid #a9c4ff; outline-offset: 3px; }
+input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+[hidden] { display: none !important; }
+.app { width: min(760px, calc(100% - 48px)); margin: 70px auto; }
+.app-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin: 0 0 24px; }
+.header-actions { display: flex; align-items: center; gap: 10px; position: relative; }
+h1 { margin: 0; font-size: 29px; font-weight: 650; letter-spacing: -.8px; }
+.button { min-height: 36px; padding: 8px 17px; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: #35404c; font-size: 13px; font-weight: 550; white-space: nowrap; transition: background .12s, border-color .12s; }
+.button:not(:disabled):hover { background: #f0f2f5; border-color: #d2d8df; }
+.button-primary { background: #283340; border-color: #283340; color: #fff; }
+.button-primary:not(:disabled):hover { background: #3b495b; border-color: #3b495b; }
+.button-add { display: inline-flex; align-items: center; gap: 5px; padding-right: 14px; }
+.button-add span { font-size: 20px; line-height: 15px; font-weight: 350; }
+.button-quiet { background: transparent; border-color: transparent; }
+.button-danger { color: #b54b4b; background: #fff5f5; border-color: #f2d7d7; }
+.button-danger:not(:disabled):hover { background: #ffe9e9; border-color: #eabbbb; }
+.notice { margin: 0 0 16px; padding: 11px 14px; border-radius: 9px; background: #edf1f6; color: #626e7e; font-size: 13px; line-height: 1.6; }
+.notice.is-error { background: #fff0ef; color: #a65149; }
+.vpn-list { overflow: visible; border: 1px solid var(--border); border-radius: 13px; background: #fff; box-shadow: 0 3px 16px #1e293b03; }
+.vpn-list:empty { display: none; }
+.vpn-row + .vpn-row { border-top: 1px solid var(--border); }
+.vpn-row { position: relative; }
+.row-main { display: flex; align-items: center; min-height: 82px; gap: 17px; padding: 20px 22px; }
+.vpn-mark { display: grid; place-items: center; flex: 0 0 36px; height: 36px; border-radius: 10px; background: #f0f2f5; color: #6e7886; font-size: 13px; font-weight: 650; }
+.vpn-row[data-status="connected"] .vpn-mark { background: #edf7f2; color: #408568; }
+.vpn-name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.row-identity { display: flex; align-items: center; flex: 1 1 auto; gap: 14px; min-width: 0; }
+.vpn-status { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; color: #8b929c; font-size: 12px; font-weight: 450; }
+.vpn-status::before { content: ""; display: block; width: 6px; height: 6px; border-radius: 50%; background: #b7bdc5; }
+.vpn-row[data-status="connected"] .vpn-status { color: #348360; }
+.vpn-row[data-status="connected"] .vpn-status::before { background: #45a374; }
+.vpn-row[data-status="error"] .vpn-status { color: #b05950; }
+.vpn-row[data-status="error"] .vpn-status::before { background: #ce7c73; }
+.vpn-row[data-status="starting"] .vpn-status,
+.vpn-row[data-status="authenticating"] .vpn-status,
+.vpn-row[data-status="otp"] .vpn-status { color: #5a7eaf; }
+.vpn-row[data-status="starting"] .vpn-status::before,
+.vpn-row[data-status="authenticating"] .vpn-status::before,
+.vpn-row[data-status="otp"] .vpn-status::before { background: #7b9bc5; }
+.row-actions { display: flex; align-items: center; gap: 7px; margin-left: auto; }
+.check-field { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #687380; white-space: nowrap; cursor: pointer; }
+.check-field input { width: 14px; height: 14px; margin: 0; accent-color: #344353; cursor: pointer; }
+.check-field:has(input:disabled) { cursor: default; opacity: .6; }
+.check-field input:disabled { cursor: default; }
+.row-automatic { margin-right: 8px; }
+.row-action { min-width: 74px; }
+.icon-button { display: inline-grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #8a929d; width: 30px; height: 32px; padding: 0; font-size: 23px; line-height: 1; }
+.icon-button:not(:disabled):hover { background: #f0f2f5; color: #434f5f; }
+.more-button { font-size: 20px; letter-spacing: 1px; }
+.settings-toggle { font-size: 21px; color: #77818d; }
+.row-menu, .settings-menu { position: absolute; z-index: 3; display: grid; min-width: 112px; padding: 5px; border: 1px solid var(--border); border-radius: 9px; background: #fff; box-shadow: 0 8px 25px #17283b16; }
+.row-menu { top: 63px; right: 19px; }
+.settings-menu { right: 0; top: 45px; min-width: 142px; }
+.settings-menu .check-field { padding: 10px 12px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.row-menu button, .settings-menu button { border: 0; background: transparent; text-align: left; padding: 9px 12px; color: #45505e; border-radius: 5px; font-size: 13px; }
+.row-menu button:not(:disabled):hover, .settings-menu button:not(:disabled):hover { background: #f1f3f6; }
+.row-menu .delete-action { color: #b36059; }
+.auth-panel { margin: -2px 22px 20px 75px; }
+.auth-inputs { display: flex; align-items: flex-end; gap: 12px; }
+.auth-options { display: flex; gap: 22px; margin-top: 13px; }
+.auth-panel .field { flex: 1 1 130px; margin: 0; }
+.auth-panel .button { min-height: 38px; }
+.auth-panel .icon-button { height: 38px; flex-shrink: 0; }
+.otp-panel { max-width: 410px; }
+.field { display: flex; flex-direction: column; gap: 7px; margin-top: 19px; color: #77818d; font-size: 12px; font-weight: 450; }
+.field input { width: 100%; min-width: 0; min-height: 38px; padding: 9px 11px; color: #263341; background: #fff; border: 1px solid #dce1e7; border-radius: 7px; font-size: 14px; font-weight: 400; }
+.field input::placeholder { color: #abb2bb; }
+.field input:disabled { color: #98a0aa; background: #f6f7f8; }
+.form-error { margin: 0; color: #b15f56; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.row-error { padding: 0 22px 17px 75px; margin-top: -5px; }
+.empty-state, .loading-state { margin: 80px 0; text-align: center; color: #969da7; font-size: 14px; }
+.dialog { width: min(420px, calc(100% - 32px)); padding: 26px; border: 1px solid var(--border); border-radius: 15px; color: #26313e; box-shadow: 0 20px 90px #12203724; }
+.dialog::backdrop { background: #1520353d; backdrop-filter: blur(2px); }
+.dialog-heading { display: flex; align-items: center; justify-content: space-between; }
+h2 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: -.2px; }
+.dialog-heading .icon-button { margin: -5px -7px -5px 10px; }
+.gateway-fields { display: grid; grid-template-columns: minmax(0, 1fr) 83px; gap: 13px; }
+.dialog .form-error { margin: 15px 0 0; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 27px; }
+.dialog-small { width: min(350px, calc(100% - 32px)); }
+.delete-name { margin: 15px 0 0; font-size: 14px; color: #78818d; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .app { width: calc(100% - 28px); margin: 30px auto; }
+  .app-header { margin-bottom: 18px; }
+  h1 { font-size: 26px; }
+  .row-main { min-height: 82px; padding: 18px 14px; gap: 11px; }
+  .vpn-mark { flex-basis: 31px; height: 34px; border-radius: 8px; font-size: 12px; }
+  .row-identity { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .vpn-name { max-width: 100%; font-size: 14px; }
+  .vpn-status { font-size: 11px; }
+  .row-actions { gap: 1px; }
+  .row-automatic { gap: 4px; margin-right: 6px; font-size: 11px; }
+  .row-action { padding: 8px 12px; min-width: 66px; }
+  .more-button { width: 25px; }
+  .row-menu { right: 12px; }
+  .auth-panel { margin: 0 15px 20px 56px; }
+  .auth-inputs { flex-wrap: wrap; gap: 12px 8px; }
+  .auth-panel .field { flex-basis: calc(50% - 4px); }
+  .auth-panel .button { margin-left: auto; }
+  .otp-panel .field { flex-basis: 120px; }
+  .row-error { padding-left: 56px; padding-right: 15px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

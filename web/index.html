@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="referrer" content="no-referrer">
+  <title>VPN</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main class="app" aria-labelledby="page-title">
+    <header class="app-header">
+      <h1 id="page-title">VPN</h1>
+      <div class="header-actions">
+        <button id="add-profile" class="button button-add" type="button" disabled>
+          <span aria-hidden="true">＋</span> 添加
+        </button>
+        <button id="settings-toggle" class="icon-button settings-toggle" type="button" aria-label="设置" aria-expanded="false" aria-controls="settings-menu" disabled>⚙</button>
+        <div id="settings-menu" class="settings-menu" role="group" aria-label="设置" hidden>
+          <label class="check-field"><input id="startup-enabled" type="checkbox">开机启动</label>
+          <button id="enable-all-auto" type="button">全部自动</button>
+          <button id="disable-all-auto" type="button">全部取消</button>
+          <button id="check-environment" type="button">检查环境</button>
+        </div>
+      </div>
+    </header>
+    <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
+    <section id="vpn-list" class="vpn-list" aria-label="VPN 连接"></section>
+    <p id="empty-state" class="empty-state" hidden>暂无 VPN</p>
+    <p id="loading-state" class="loading-state" role="status">正在连接…</p>
+  </main>
+
+  <dialog id="profile-dialog" class="dialog" aria-labelledby="profile-dialog-title">
+    <form id="profile-form" autocomplete="off">
+      <div class="dialog-heading">
+        <h2 id="profile-dialog-title">添加 VPN</h2>
+        <button class="icon-button" type="button" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <div class="gateway-fields">
+        <label class="field">网关<input id="profile-gateway" name="gateway" maxlength="253" required autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="vpn.example.com"></label>
+        <label class="field field-port">端口<input id="profile-port" name="port" type="number" min="1" max="65535" value="443" inputmode="numeric" required></label>
+      </div>
+      <label class="field">名称（选填）<input id="profile-name" name="name" maxlength="255" autocomplete="off"></label>
+      <p id="profile-error" class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button class="button button-quiet" type="button" data-close-dialog>取消</button>
+        <button id="save-profile" class="button button-primary" type="submit">添加</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="delete-dialog" class="dialog dialog-small" aria-labelledby="delete-dialog-title">
+    <form id="delete-form">
+      <h2 id="delete-dialog-title">删除 VPN？</h2>
+      <p id="delete-name" class="delete-name"></p>
+      <p id="delete-error" class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button class="button button-quiet" type="button" data-close-dialog>取消</button>
+        <button id="confirm-delete" class="button button-danger" type="submit">删除</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="expand-dialog" class="dialog" aria-labelledby="expand-dialog-title" aria-describedby="expand-dialog-message">
+    <form method="dialog">
+      <h2 id="expand-dialog-title">新增并发连接？</h2>
+      <p id="expand-dialog-message" class="delete-name">新增并发连接需要暂时断开当前连接，创建后恢复；动态口令需你填写。</p>
+      <div class="dialog-actions">
+        <button id="cancel-expand" class="button button-quiet" type="submit" value="cancel">取消</button>
+        <button id="confirm-expand" class="button button-primary" type="submit" value="confirm">继续</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

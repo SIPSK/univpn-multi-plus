@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 4,
+  "managerVersion": "0.2.4",
+  "productionAssets": ["index.html", "app.js", "style.css"],
+  "language": "zh-CN",
+  "externalDependencies": [],
+  "session": {
+    "launch": "POST /api/session with X-VPN-Token from URL fragment and empty JSON; then remove fragment",
+    "refresh": "GET /api/bootstrap with same-origin HttpOnly session cookie; response {token, version}",
+    "bootstrapUnauthorized": "Show a launcher instruction and disable actions",
+    "storage": "Token is held in memory only. No localStorage or sessionStorage writes."
+  },
+  "api": {
+    "state": "GET /api/state -> {profiles:[{id,name,gateway,port,index,networkVersion,status,autoConnect,hasSavedCredential,canDisconnect,challengeId,error?,challenge?}],settings:{startup},capabilities:{nativeAuth,otp,environment},version,handoffRequired,expansion:{inProgress,profileId?},error?}",
+    "create": "POST /api/profiles -> {name,gateway,port}; always remembers the configuration first. When all native clients/connections are idle, the backend assigns an unreserved environment or runs the original multi create flow. Online/unknown/failed creation retains the configuration with index=0 and optional response notice, without retry.",
+    "edit": "PATCH /api/profiles/{id} -> partial {name,gateway,port,autoConnect}; per-row automatic checkbox sends only {autoConnect}",
+    "delete": "DELETE /api/profiles/{id} -> {}",
+    "connect": "POST /api/profiles/{id}/connect -> {username,password,remember,autoConnect,networkVersion}; saved-credential connect sends only {networkVersion}, without account or password fields. Version is a nonsecret 64hex endpoint identity guard.",
+    "expandConnect": "POST /api/profiles/{id}/expand-connect with the same connect body, only after explicit confirmation. Optional response {ok,credentialsRequired,failedProfileIds}; credentialsRequired opens an empty login form with remember checked, failedProfileIds produces only a generic restoration notice.",
+    "forgetCredential": "DELETE /api/profiles/{id}/credential -> {}; backend clears saved credential and autoConnect",
+    "startup": "POST /api/settings -> {startup:boolean}; independent global setting",
+    "batchAutomatic": "POST /api/auto-connect -> {enabled:boolean}; changes only per-profile autoConnect flags, never initiates a connection",
+    "otp": "POST /api/profiles/{id}/otp -> {code}",
+    "disconnect": "POST /api/profiles/{id}/disconnect -> {}",
+    "environment": "GET /api/environment; token-authorized read-only probe. Show only a plain success/failure sentence, never internal phase or codes.",
+    "errors": "Non-2xx application/json response with sanitized error. Fixed code expansion_required opens a confirmation; credentials_required opens empty login with remember checked; expansion_in_progress shows a short wait notice. Optional details.failedProfileIds is never printed as raw metadata.",
+    "success": "Any 2xx; mutation response may be empty. Frontend then requests fresh state."
+  },
+  "statuses": ["disconnected", "starting", "authenticating", "otp", "connected", "disconnecting", "error", "unknown"],
+  "behavior": {
+    "identity": "Rows are keyed only by independent profile id. Display gateway:port with optional name prefix; append (2), (3) only for exact duplicate name+endpoint labels, without changing stored names. No production A2/A5 labels or slot numbers.",
+    "nativeSources": "All source configurations, including exact name/endpoint duplicates, remain independent. Public name may retain the original visible name; private sourceId/sourceIndex/sourceName/reference/account fields never enter the browser.",
+    "unassigned": "An unassigned configuration behaves as an ordinary disconnected row; the browser does not expose native slot allocation details or a separate preparation action. Manual first connection creates its required environment when safe; positive assignments stay reserved for that configuration.",
+    "firstHandoff": "When external native UIs or external VPN peers remain, show the backend's short handoff notice and disable unowned connection/disconnection actions; configuration import, add, automatic flags and daily owned-session controls remain available. No automatic forced takeover.",
+    "activeProfiles": "Disable edit and delete until disconnected",
+    "unknownOrOffline": "Disable connection mutations and never show stale state as currently connected; an online owned session with canDisconnect=true retains its disconnect action even when its observation is uncertain",
+    "ownedError": "canDisconnect=true forbids relogin/edit/delete and makes the row action disconnect the old session before another login",
+    "nativeAuthUnavailable": "Disable new login and show the unavailability notice",
+    "credentials": "Only current form and request in frontend; password and code are cleared immediately on submission and all form fields on removal/pagehide. Optional backend storage uses Windows Credential Manager and only a hasSavedCredential boolean is returned.",
+    "defaults": "Missing/new autoConnect, hasSavedCredential and settings.startup are false",
+    "automatic": "Per-profile automatic flag is independent of global startup; batch changes update these same flags. Automatic login implies remember=true. Enabling an unsaved disconnected profile opens the blank first-login form without attempting a connection.",
+    "savedLogin": "Click connect with a saved credential sends only the version captured at click; relogin opens blank fields; forget removes saved login without implicitly disconnecting",
+    "expansion": "No expansion/disconnect request before confirmation; cancellation does nothing. Confirmation sends the same in-memory connect body once. Credentials are cleared from the form on first submission and removed from the request object in finally. Expansion disables other mutations, keeps OTP available, never shows source or slot details, and never automatically resends after failure.",
+    "endpointVersion": "Login forms capture networkVersion when created; saved connect captures it at click. operate copies the body and only fills a missing version once. The confirmation continuation never substitutes a newer version after another window edits the endpoint. Backend rejects stale credentials_required before authentication and the page opens a new empty remembered-login form.",
+    "polling": "2 seconds in foreground, 6 seconds when hidden; preserve focused form DOM and input values",
+    "longNativeActions": "Connection, expansion and creation requests wait up to 300 seconds, disconnect waits up to 150 seconds, with no automatic resend and buttons kept busy. State polling pauses during local long requests; earlier in-flight GET timeouts cannot create a false offline banner. Other windows continue reading expansion state. Refresh immediately after completion to show OTP/current state.",
+    "gatewayChanged": "Discard unfinished credential form",
+    "otpChallenge": "One dynamic-token input for status=otp; no phone, messaging, or fixed-connection authentication logic"
+  },
+  "verification": {
+    "mockOnly": true,
+    "realVpnActions": 0,
+    "testGroupsPassed": 37,
+    "testScript": "tests/frontend.test.cjs",
+    "results": "tests/artifacts/test-results.json",
+    "screenshots": ["tests/artifacts/desktop.png", "tests/artifacts/verification.png", "tests/artifacts/mobile.png", "tests/artifacts/login-options.png", "tests/artifacts/settings.png", "tests/artifacts/multiple-configurations.png", "tests/artifacts/expansion-confirmation.png"],
+    "liveBackendIntegration": "This scope uses fake native bridges, memory-only credentials and an owned mock HTTP server. Real login/disconnect remains paused."
+  }
+}
