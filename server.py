@@ -15,6 +15,7 @@ import secrets
 import signal
 import sys
 import threading
+import time
 from urllib.parse import unquote, urlsplit
 
 from core import AppError, Manager, ROOT, VERSION
@@ -119,6 +120,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'")
+        if self.close_connection:
+            self.send_header("Connection", "close")
         if cookie:
             self.send_header("Set-Cookie", f"vpn_session={self.server.browser_session}; HttpOnly; SameSite=Strict; Path=/")
         self.end_headers()
@@ -130,6 +133,44 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+    def _drain_rejected_body(self):
+        """Avoid an unread-body TCP reset after an early HTTP rejection.
+
+        Authentication still precedes body parsing. This discards only a
+        bounded raw body, never decodes or logs it, and never waits indefinitely
+        for a client which stopped uploading after receiving the rejection.
+        """
+        if getattr(self, "_request_body_consumed", False) or self.headers.get("Transfer-Encoding"):
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return
+        if not 0 < length <= MAX_BODY:
+            return
+        try:
+            deadline = time.monotonic() + 0.1
+            while length:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return
+                self.connection.settimeout(remaining)
+                chunk = self.rfile.read1(min(length, 4096))
+                if not chunk:
+                    return
+                length -= len(chunk)
+        except OSError:
+            # The client may already have closed or stopped its upload. No
+            # request processing follows this best-effort, bounded discard.
+            pass
+
+    def _error_json(self, status, data):
+        self.close_connection = True
+        try:
+            self._json(status, data)
+        finally:
+            self._drain_rejected_body()
 
     def _boundary(self):
         if self.client_address[0] != "127.0.0.1":
@@ -173,7 +214,9 @@ class Handler(BaseHTTPRequestHandler):
             raise AppError("请求格式无效", 415)
         self.connection.settimeout(10)
         try:
-            data = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+            raw = self.rfile.read(length) if length else b""
+            self._request_body_consumed = True
+            data = json.loads(raw.decode("utf-8")) if length else {}
         except (ValueError, UnicodeError):
             raise AppError("请求格式无效") from None
         if not isinstance(data, dict):
@@ -181,6 +224,7 @@ class Handler(BaseHTTPRequestHandler):
         return data
 
     def do_GET(self):
+        self._request_body_consumed = False
         try:
             self._boundary()
             parsed = urlsplit(self.path)
@@ -214,13 +258,12 @@ class Handler(BaseHTTPRequestHandler):
             self._headers(200, mime + "; charset=utf-8", len(body))
             self.wfile.write(body)
         except AppError as exc:
-            self.close_connection = True
-            self._json(exc.status, error_payload(exc))
+            self._error_json(exc.status, error_payload(exc))
         except (OSError, ValueError):
-            self.close_connection = True
-            self._json(500, {"error": "无法读取页面"})
+            self._error_json(500, {"error": "无法读取页面"})
 
     def _write(self, method):
+        self._request_body_consumed = False
         try:
             self._boundary()
             self._authorize()
@@ -264,12 +307,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, manager.forget_credential(profile_id))
             raise AppError("请求方法无效", 405)
         except AppError as exc:
-            self.close_connection = True
-            self._json(exc.status, error_payload(exc))
+            self._error_json(exc.status, error_payload(exc))
         except Exception:
             # Never render native exception messages or submitted credentials.
-            self.close_connection = True
-            self._json(500, {"error": "操作失败，连接状态已保留"})
+            self._error_json(500, {"error": "操作失败，连接状态已保留"})
 
     def do_POST(self):
         self._write("POST")
@@ -281,7 +322,8 @@ class Handler(BaseHTTPRequestHandler):
         self._write("DELETE")
 
     def do_OPTIONS(self):
-        self._json(403, {"error": "不接受跨站请求"})
+        self._request_body_consumed = False
+        self._error_json(403, {"error": "不接受跨站请求"})
 
 
 def main(argv=None):
