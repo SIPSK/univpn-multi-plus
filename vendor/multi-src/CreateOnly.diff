@@ -1,0 +1,74 @@
+--- a/src/Runtime.ps1
++++ b/src/Runtime.ps1
+@@ -10,6 +10,8 @@
+ Reopen a previously generated instance without creating an adapter.
+ .PARAMETER SelfTest
+ Check supported original binaries and generate patches in memory only.
++.PARAMETER CreateOnly
++Create and verify one ready instance, without opening a client or waiting for input.
+ .PARAMETER SourceDirectory
+ Override the original installation directory. Defaults to the script directory.
+ #>
+@@ -17,10 +19,12 @@
+ param(
+     [int]$OpenInstance = 0,
+     [switch]$SelfTest,
++    [switch]$CreateOnly,
+     [string]$SourceDirectory
+ )
+ $ErrorActionPreference='Stop'
+ Set-StrictMode -Version Latest
++if($CreateOnly -and $OpenInstance){throw 'CreateOnly cannot be combined with OpenInstance.'}
+ # Windows PowerShell 5.1 -File can evaluate parameter defaults before
+ # $PSScriptRoot is populated. Resolve the default in the script body instead.
+ if(-not $PSBoundParameters.ContainsKey('SourceDirectory')){$SourceDirectory=$PSScriptRoot}
+@@ -135,7 +139,7 @@
+     if($svc.PathName -cne $binary){throw 'Service path does not match this instance.'}
+     return $svc
+ }
+-function Open-Client($Info,$Record) {
++function Assert-ReadyInstance($Info,$Record) {
+     if($Record.Status -ne 'Ready'){throw 'This instance is incomplete; inspect its log before using it.'}
+     $tap=@(Get-TapAdapters | Where-Object {([guid]$_.InterfaceGuid) -eq ([guid]$Record.TapGuid)})
+     if($tap.Count -ne 1){throw 'The instance TAP adapter is missing.'}
+@@ -146,6 +150,10 @@
+         if((Get-FileHash -LiteralPath (Join-Path $Info.Directory $image.Target)).Hash -ne $image.Hash){throw 'Instance binary verification failed.'}
+     }
+     $svc=Assert-ServiceOwner $Info
++    return $svc
++}
++function Open-Client($Info,$Record) {
++    $svc=Assert-ReadyInstance $Info $Record
+     if($svc.State -ne 'Running'){
+         if(Get-ListeningTcpConnection $Info.RpcPort){throw 'RPC port is occupied.'}
+         Start-Service $Info.Service
+@@ -199,8 +207,11 @@
+         $escapedScript=$scriptFile.Replace("'","''")
+         $escapedSource=$source.Replace("'","''")
+         $command="& '$escapedScript' -SourceDirectory '$escapedSource' -OpenInstance $OpenInstance"
++        if($CreateOnly){$command+=' -CreateOnly'}
+         $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+-        $process=Start-Process -FilePath (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) -Verb RunAs -PassThru -Wait
++        $elevation=@{FilePath=(Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe');ArgumentList=@('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded);Verb='RunAs';PassThru=$true;Wait=$true}
++        if($CreateOnly){$elevation.WindowStyle='Hidden'}
++        $process=Start-Process @elevation
+         if($process.ExitCode -ne 0){throw 'Elevated action did not complete. See the log in .univpn-multi.'}
+         return
+     }
+@@ -280,11 +291,16 @@
+     [IO.File]::WriteAllText((Join-Path $info.Directory ("Open-UniVPN{0}.cmd" -f $info.Number)),$launcher,[Text.Encoding]::ASCII)
+     $record.Files=@($images | Select-Object Target,Hash)
+     Save-Record $info $record
++    if($CreateOnly){
++        $null=Assert-ReadyInstance $info $record
++        return
++    }
+     Open-Client $info $record
+     Write-Host ("Created. Reopen using: {0}\Open-UniVPN{1}.cmd" -f $info.Directory,$info.Number) -ForegroundColor Green
+     Write-Host 'The original client was not modified. Existing clients can now be reopened and connected.'
+     Read-Host 'Press Enter to close' | Out-Null
+ } catch {
++    if($CreateOnly){throw}
+     $message=$_.Exception.Message
+     if($_.Exception.Data.Contains('VpnRunning') -and -not $SelfTest){
+         Add-Type -AssemblyName System.Windows.Forms
