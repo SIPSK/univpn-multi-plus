@@ -10,15 +10,15 @@ UniVPN Multi Plus is an independent extension of **[UniVPN Multi by UsernameFull
 - License: MIT, retained complete and unchanged in [vendor/LICENSE.univpn-multi](vendor/LICENSE.univpn-multi) and [vendor/multi-src/LICENSE](vendor/multi-src/LICENSE).
 - Included code: `vendor/multi-src/` and generated `vendor/UniVPN-Multi.ps1`.
 
-The runtime adaptation adds `-CreateOnly`: return after a verified Ready record without opening a client or waiting for input; errors propagate without a message box. [CreateOnly.diff](vendor/multi-src/CreateOnly.diff) records this change. The patch engine is byte-identical to upstream. Original executable checks and idle-client/TAP, mutex, destination, junction, and service ownership protections remain in place.
+The runtime adaptation adds `-CreateOnly`, which returns after verifying the Ready record. [CreateOnly.diff](vendor/multi-src/CreateOnly.diff) records that change. The runtime also assigns each generated clone its own five-port loopback UDP range for VNIC initialization. `-VnicRepairImage` generates legacy and updated images in memory for the manager's repair helper. The patch engine source remains byte-identical to upstream. Original executable hashes, protected paths, and service ownership are checked before repair.
 
 SHA256 provenance, checked against the fixed revision:
 
 | File | Upstream | Included |
 | --- | --- | --- |
-| `UniVPN-Multi.ps1` | `bf166ae212af27a99f2bec248d0ff93aa1bc42e59929b8ba81097b20e5f6d665` | `e89190659105f451829bf67f5a0a8d609be120e01a484176a17f88ae64577230` |
+| `UniVPN-Multi.ps1` | `bf166ae212af27a99f2bec248d0ff93aa1bc42e59929b8ba81097b20e5f6d665` | `512f602c1710de5dd2d879860ab3f1afa884da9c5f81e1c1336d59e6ccf508bd` |
 | `src/PatchEngine.cs` | `ede84c5d4da0bbae03d2aaacdfc26b9d25cb57f47ac98402118ef12f6773783a` | Same |
-| `src/Runtime.ps1` | `288461e3b443923db970eee098064763eb6d53b926dd49db14decf0012e55d3d` | `b56007e6e29095ac222266befec839ac424ee2f82d6ebeda96e5363dd70e02a9` |
+| `src/Runtime.ps1` | `288461e3b443923db970eee098064763eb6d53b926dd49db14decf0012e55d3d` | `d1222a1624aa296dc147cb125ebe93ff0398503bfc2bfc0bcbd9dc6ec3d304db` |
 
 The included script hash remains pinned independently in `tools/native-action.ps1` and `vendor/setup-selfcheck.json`. Do not update those pins without reviewing and rebuilding the source change.
 

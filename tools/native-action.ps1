@@ -5,11 +5,12 @@ EnsureService only creates/starts the selected verified LocalSystem service and
 grants this user START|QUERY_STATUS; it never stops a service or a process.
 CreateInstance invokes only the pinned bundled multi-instance script's CreateOnly
 mode, while all clients/TAPs are idle, then authorizes its single new service.
+RepairVnicPort updates only an idle clone's backend, launcher and hash record.
 No credentials or vendor configuration/AppData/logs are accepted or read.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory=$true)][ValidateSet('Disconnect','EnsureService','CreateInstance','QuiesceOwned','Probe')][string]$Mode,
+    [Parameter(Mandatory=$true)][ValidateSet('Disconnect','EnsureService','CreateInstance','QuiesceOwned','Probe','RepairVnicPort')][string]$Mode,
     [Parameter(Mandatory=$true)][ValidateRange(1,999)][int]$Index,
     [Parameter(Mandatory=$true)][string]$SourceDirectory,
     [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{32}$')][string]$Nonce,
@@ -25,6 +26,7 @@ $Mode = switch ($Mode.ToLowerInvariant()) {
     'createinstance' {'CreateInstance'}
     'quiesceowned' {'QuiesceOwned'}
     'probe' {'Probe'}
+    'repairvnicport' {'RepairVnicPort'}
     default { throw [ArgumentException]::new('Unsupported native action mode.') }
 }
 
@@ -119,7 +121,7 @@ function Assert-QuiesceIdle {
 function Get-PinnedVendorBytes {
     # No parameter can choose executable code. Hash the same bytes later written
     # into the protected installation, avoiding a bundle-path read/copy race.
-    $expected = 'e89190659105f451829bf67f5a0a8d609be120e01a484176a17f88ae64577230'
+    $expected = '512f602c1710de5dd2d879860ab3f1afa884da9c5f81e1c1336d59e6ccf508bd'
     $vendor = Join-Path (Split-Path $PSScriptRoot -Parent) 'vendor\UniVPN-Multi.ps1'
     Assert-NotReparse ([IO.Path]::GetDirectoryName($vendor))
     Assert-NotReparse $vendor
@@ -155,6 +157,96 @@ function Get-InstanceRecordNames([string]$Source) {
     return $names
 }
 
+function Assert-VnicRepairIdle([string]$Product,[guid]$TapGuid) {
+    if (Get-Process -Name @($Product,($Product+'CS')) -ErrorAction SilentlyContinue) {
+        Fail 'The selected instance still has a running client or backend.'
+    }
+    $taps = @(Get-NetAdapter -IncludeHidden | Where-Object {
+        $_.InterfaceDescription -like 'TAP-Windows Adapter V9*' -and [guid]$_.InterfaceGuid -eq $TapGuid
+    })
+    if ($taps.Count -ne 1 -or $taps[0].Status -ne 'Disconnected') {
+        Fail 'The selected TAP must be present and disconnected.'
+    }
+}
+
+function Assert-VnicPortAvailable([int]$StartPort) {
+    foreach ($port in $StartPort..($StartPort+4)) {
+        $socket = [Net.Sockets.Socket]::new([Net.Sockets.AddressFamily]::InterNetwork,
+            [Net.Sockets.SocketType]::Dgram,[Net.Sockets.ProtocolType]::Udp)
+        try {
+            $socket.ExclusiveAddressUse = $true
+            $socket.Bind([Net.IPEndPoint]::new([Net.IPAddress]::Loopback,$port))
+            return
+        } catch [Net.Sockets.SocketException] {
+            if ($_.Exception.SocketErrorCode -notin @('AddressAlreadyInUse','AccessDenied')) { throw }
+        } finally { $socket.Dispose() }
+    }
+    Fail 'All five UDP ports for this instance are unavailable.'
+}
+
+function Set-InstanceVnicPort([string]$Source,[string]$Real,[string]$Alias,[string]$RecordPath,$Record) {
+    $guid = [guid]$Record.TapGuid
+    if ($guid -eq [guid]::Empty) { Fail 'A dedicated instance TAP is required.' }
+    Assert-VnicRepairIdle $product $guid
+    $serviceName = $product+'Service'
+    $service = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
+    $binary = '"'+(Join-Path $Alias ('promote\'+$product+'PromoteService.exe'))+'"'
+    if (-not $service -or $service.PathName -ine $binary -or $service.StartName -ine 'LocalSystem') {
+        Fail 'Service ownership does not match this instance.'
+    }
+    $creationScript = Get-ProtectedCreationScript $Source
+    $images = & $creationScript -SourceDirectory $Source -OpenInstance $Index -VnicRepairImage -RepairTapGuid $guid
+    $hasPort = $null -ne $Record.PSObject.Properties['VnicPort']
+    if ($hasPort -and $Record.VnicPort -ne $images.VnicPort) { Fail 'Unexpected VNIC port metadata.' }
+    $current = if ($hasPort) { $images.Updated } else { $images.Legacy }
+    foreach ($image in $current) {
+        $entry = $Record.Files | Where-Object { $_.Target -ceq $image.Target }
+        if ($entry.Hash -ine $image.Hash) { Fail 'Instance is not a reproducible UniVPN clone.' }
+    }
+    Assert-VnicPortAvailable $images.VnicPort
+    if ($hasPort) { return [int]$images.VnicPort }
+
+    $backend = $images.Updated[2]
+    ($Record.Files | Where-Object { $_.Target -ceq $backend.Target }).Hash = $backend.Hash
+    $Record | Add-Member -NotePropertyName VnicPort -NotePropertyValue $images.VnicPort
+    $command = "& '"+$creationScript.Replace("'","''")+"' -SourceDirectory '"+$Source.Replace("'","''")+"' -OpenInstance $Index"
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+    $launcher = "@echo off`r`n`"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`" -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded`r`nif errorlevel 1 pause`r`n"
+    $files = @(
+        [pscustomobject]@{Path=(Join-Path $Real $backend.Target);Bytes=$backend.Bytes},
+        [pscustomobject]@{Path=(Join-Path $Real "Open-UniVPN$Index.cmd");Bytes=[Text.Encoding]::ASCII.GetBytes($launcher)},
+        [pscustomobject]@{Path=$RecordPath;Bytes=[Text.Encoding]::UTF8.GetBytes(($Record | ConvertTo-Json -Depth 8))}
+    )
+    $staged = @()
+    $replaced = @()
+    try {
+        foreach ($file in $files) {
+            Assert-Protected $file.Path
+            $temporary = $file.Path+'.'+$Nonce+'.tmp'
+            $backup = $file.Path+'.'+$Nonce+'.bak'
+            if (Test-Path -LiteralPath $backup) { Fail 'The repair backup already exists.' }
+            $stream = [IO.FileStream]::new($temporary,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+            $staged += [pscustomobject]@{Path=$file.Path;Temporary=$temporary;Backup=$backup}
+            try { $stream.Write($file.Bytes,0,$file.Bytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }
+        }
+        Assert-VnicRepairIdle $product $guid
+        foreach ($file in $staged) {
+            [IO.File]::Replace($file.Temporary,$file.Path,$file.Backup)
+            $replaced = @($file) + $replaced
+            Assert-Protected $file.Path
+        }
+        if ((Get-FileHash -LiteralPath $files[0].Path -Algorithm SHA256).Hash -ine $backend.Hash) {
+            Fail 'The updated backend hash does not match.'
+        }
+    } catch {
+        foreach ($file in $replaced) { [IO.File]::Replace($file.Backup,$file.Path,[NullString]::Value) }
+        throw
+    } finally {
+        foreach ($file in $staged) { [IO.File]::Delete($file.Temporary) }
+    }
+    return [int]$images.VnicPort
+}
+
 $resultDirectory = $null
 $creationMutex = $null
 $creationHeld = $false
@@ -186,6 +278,10 @@ try {
     }
     if ($Mode -ceq 'CreateInstance') { Assert-CreationIdle; $null=Get-PinnedVendorBytes }
     if ($Mode -ceq 'QuiesceOwned') { Assert-QuiesceIdle }
+    if ($Mode -ceq 'RepairVnicPort') {
+        if ($Index -eq 1) { Fail 'Only a generated clone can be repaired.' }
+        $null=Get-PinnedVendorBytes
+    }
     if (-not $administrator) {
         $actionPhase = 'elevation'
         $shell = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'
@@ -204,15 +300,18 @@ try {
     $actionPhase = 'results'
     $resultDirectory = Ensure-ResultDirectory $source
     if (Test-Path -LiteralPath (Join-Path $resultDirectory ($Nonce+'.json'))) { Fail 'This action nonce has already been used.' }
+    if ($Mode -in @('CreateInstance','RepairVnicPort')) {
+        # Serialize maintenance with the upstream Create/Open paths.
+        $creationMutex = [Threading.Mutex]::new($false,'Global\UniVPNMultiInstaller10781')
+        try { $creationHeld=$creationMutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $creationHeld=$true }
+        if (-not $creationHeld) { Fail 'Another native instance operation is already in progress.' }
+    }
     if ($Mode -ceq 'CreateInstance') {
         $actionPhase = 'creation'
         Assert-CreationIdle
         # The upstream script recursively acquires this same thread-owned mutex.
         # Holding it across the before/after snapshot prevents claiming another
         # concurrent upstream invocation's Ready record.
-        $creationMutex = [Threading.Mutex]::new($false,'Global\UniVPNMultiInstaller10781')
-        try { $creationHeld=$creationMutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $creationHeld=$true }
-        if (-not $creationHeld) { Fail 'Another native instance creation is already in progress.' }
         $creationScript = Get-ProtectedCreationScript $source
         $beforeRecords = Get-InstanceRecordNames $source
         Assert-CreationIdle
@@ -260,6 +359,12 @@ try {
     Assert-Protected (Join-Path $real 'serviceclient')
     foreach ($relative in @(($product+'.exe'), ('serviceclient\'+$product+'CS.exe'))) {
         Assert-Protected (Join-Path $real $relative)
+    }
+    if ($Mode -ceq 'RepairVnicPort') {
+        $actionPhase = 'repair_vnic_port'
+        $port = Set-InstanceVnicPort $source $real $alias $recordPath $record
+        Save-Result $resultDirectory ([ordered]@{ok=$true;mode=$Mode;index=$Index;vnicPort=$port})
+        exit 0
     }
     if (-not ('UniVpnManager.RestrictedDisconnect' -as [type])) {
         Add-Type -TypeDefinition @'

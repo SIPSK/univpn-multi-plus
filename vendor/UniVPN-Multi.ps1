@@ -12,6 +12,8 @@ Reopen a previously generated instance without creating an adapter.
 Check supported original binaries and generate patches in memory only.
 .PARAMETER CreateOnly
 Create and verify one ready instance, without opening a client or waiting for input.
+.PARAMETER VnicRepairImage
+Generate the old and updated image hashes and the updated backend in memory.
 .PARAMETER SourceDirectory
 Override the original installation directory. Defaults to the script directory.
 #>
@@ -20,6 +22,8 @@ param(
     [int]$OpenInstance = 0,
     [switch]$SelfTest,
     [switch]$CreateOnly,
+    [switch]$VnicRepairImage,
+    [guid]$RepairTapGuid,
     [string]$SourceDirectory
 )
 $ErrorActionPreference='Stop'
@@ -102,6 +106,7 @@ function Get-InstanceInfo([int]$Number) {
         Alias=(Join-Path $stateRoot $product)
         Record=(Join-Path $stateRoot ('instance-{0:D3}.json' -f $Number))
         RpcPort=29190+$Number-1; BackendPort=19060+$Number-1
+        VnicPort=36000+5*($Number-2)
     }
 }
 function Get-NextNumber {
@@ -121,10 +126,18 @@ function Get-NextNumber {
     }
     return [int](($numbers | Measure-Object -Maximum).Maximum+1)
 }
-function Get-Images($Info,[string]$Guid) {
+function Get-Images($Info,[string]$Guid,[switch]$LegacyVnic) {
     for($kind=0;$kind -lt 3;$kind++){
         $bytes=[IO.File]::ReadAllBytes((Join-Path $source $sourceFiles[$kind]))
         $patched=[UniVpnMulti.BinaryPatch]::PatchInstance($bytes,$kind,$Guid,$Info.Number)
+        if($kind -eq 2 -and -not $LegacyVnic){
+            # Verified x64 backend: VNIC_Init binds this loopback UDP port and
+            # increments it on failure, trying at most five consecutive ports.
+            # Keep each clone's entire retry window outside the default dynamic range.
+            $offset=0x181910
+            if([BitConverter]::ToUInt16($patched,$offset) -ne 49327){throw 'Unexpected VNIC UDP port data.'}
+            [BitConverter]::GetBytes([uint16]$Info.VnicPort).CopyTo($patched,$offset)
+        }
         $target=$sourceFiles[$kind].Replace('UniVPN',$Info.Product)
         [pscustomobject]@{Target=$target;Bytes=$patched;Hash=[UniVpnMulti.BinaryPatch]::Hash($patched)}
     }
@@ -146,7 +159,9 @@ function Assert-ReadyInstance($Info,$Record) {
     $aliasItem=Get-Item -LiteralPath $Info.Alias -Force
     if($aliasItem.LinkType -ne 'Junction' -or @($aliasItem.Target).Count -ne 1 -or
         [IO.Path]::GetFullPath([string]$aliasItem.Target).TrimEnd('\') -ine $Info.Directory){throw 'Instance directory link mismatch.'}
-    foreach($image in @(Get-Images $Info $Record.TapGuid)){
+    $legacyVnic=$null -eq $Record.PSObject.Properties['VnicPort']
+    if(-not $legacyVnic -and $Record.VnicPort -ne $Info.VnicPort){throw 'Instance VNIC port metadata does not match.'}
+    foreach($image in @(Get-Images $Info $Record.TapGuid -LegacyVnic:$legacyVnic)){
         if((Get-FileHash -LiteralPath (Join-Path $Info.Directory $image.Target)).Hash -ne $image.Hash){throw 'Instance binary verification failed.'}
     }
     $svc=Assert-ServiceOwner $Info
@@ -312,6 +327,15 @@ $record=$null
 try {
     # Verify every original executable before elevation or any system change.
     $null=@(Get-Images (Get-InstanceInfo 2) '{00000000-0000-0000-0000-000000000000}')
+    if($VnicRepairImage){
+        if($SelfTest -or $CreateOnly -or -not $RepairTapGuid -or $RepairTapGuid -eq [guid]::Empty){throw 'A dedicated instance TAP is required.'}
+        $info=Get-InstanceInfo $OpenInstance
+        $guid=$RepairTapGuid.ToString('B').ToUpperInvariant()
+        $legacy=@(Get-Images $info $guid -LegacyVnic)
+        $updated=@(Get-Images $info $guid)
+        [pscustomobject]@{Legacy=$legacy;Updated=$updated;VnicPort=$info.VnicPort}
+        return
+    }
     if($SelfTest){
         $fixture='{11111111-2222-3333-4444-555555555555}'
         $hashes=@{}
@@ -319,6 +343,10 @@ try {
             $testInfo=Get-InstanceInfo $n
             $testImages=@(Get-Images $testInfo $fixture)
             if($testImages.Count -ne 3){throw 'Image count mismatch'}
+            $legacy=@(Get-Images $testInfo $fixture -LegacyVnic)
+            if($testImages[0].Hash -ne $legacy[0].Hash -or $testImages[1].Hash -ne $legacy[1].Hash -or
+                [BitConverter]::ToUInt16($testImages[2].Bytes,0x181910) -ne (36000+5*($n-2)) -or
+                $testImages[2].Hash -eq $legacy[2].Hash){throw 'VNIC isolation changed an unexpected image.'}
             foreach($image in $testImages){
                 if($hashes.ContainsKey($image.Hash)){throw 'Instances unexpectedly share a binary hash'}
                 $hashes[$image.Hash]=$true
@@ -363,6 +391,7 @@ try {
     $record=[ordered]@{
         Number=$info.Number;Product=$info.Product;Directory=$info.Directory;Alias=$info.Alias
         Service=$info.Service;RpcPort=$info.RpcPort;BackendPort=$info.BackendPort
+        VnicPort=$info.VnicPort
         Status='Creating';TapGuid=$null;CreatedAt=(Get-Date).ToString('o');Error=$null
     }
     Save-Record $info $record
@@ -427,7 +456,7 @@ try {
     Write-Host 'The original client was not modified. Existing clients can now be reopened and connected.'
     Read-Host 'Press Enter to close' | Out-Null
 } catch {
-    if($CreateOnly){throw}
+    if($CreateOnly -or $VnicRepairImage){throw}
     $message=$_.Exception.Message
     if($_.Exception.Data.Contains('VpnRunning') -and -not $SelfTest){
         Add-Type -AssemblyName System.Windows.Forms

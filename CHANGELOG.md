@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Give each native clone a dedicated range of five loopback UDP ports for VNIC initialization. An existing idle clone can be repaired while other instances stay online.
+- Verified three live tunnels on the development machine after repairing one clone. Two hosts returned SSH banners through the repaired tunnel.
+
 ## 0.2.5 — 2026-10-30
 
 First public source delivery of UniVPN Multi Plus, an independent extension of [UniVPN Multi](https://github.com/UsernameFull/univpn-multi).

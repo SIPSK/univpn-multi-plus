@@ -30,7 +30,8 @@ The source repository contains no official installer or private VPN configuratio
 | --- | --- |
 | Two real concurrent tunnels, login, and dynamic-token authentication | Verified on the development machine |
 | Creation of a third native instance | Verified on the development machine |
-| Three/four concurrent tunnels carrying business traffic | Not verified |
+| Three real tunnels online after the UDP port fix | Verified on the development machine, including SSH service responses from two hosts through the repaired tunnel |
+| Four concurrent tunnels and traffic through every tunnel at once | Not verified |
 | Other official builds, version replacement, and a fresh machine | Not verified |
 | Unit and local browser mock tests | Automated; no real service, TAP, or VPN creation |
 
