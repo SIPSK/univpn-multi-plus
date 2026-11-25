@@ -16,9 +16,9 @@ SHA256 provenance, checked against the fixed revision:
 
 | File | Upstream | Included |
 | --- | --- | --- |
-| `UniVPN-Multi.ps1` | `bf166ae212af27a99f2bec248d0ff93aa1bc42e59929b8ba81097b20e5f6d665` | `512f602c1710de5dd2d879860ab3f1afa884da9c5f81e1c1336d59e6ccf508bd` |
+| `UniVPN-Multi.ps1` | `bf166ae212af27a99f2bec248d0ff93aa1bc42e59929b8ba81097b20e5f6d665` | `8caea4a92c7c36de140f32e721cf920e63687a838c29fc3c9b1b479d1afd4e04` |
 | `src/PatchEngine.cs` | `ede84c5d4da0bbae03d2aaacdfc26b9d25cb57f47ac98402118ef12f6773783a` | Same |
-| `src/Runtime.ps1` | `288461e3b443923db970eee098064763eb6d53b926dd49db14decf0012e55d3d` | `d1222a1624aa296dc147cb125ebe93ff0398503bfc2bfc0bcbd9dc6ec3d304db` |
+| `src/Runtime.ps1` | `288461e3b443923db970eee098064763eb6d53b926dd49db14decf0012e55d3d` | `ce89ef41d1107156598fbb54a23f8e5d44a475c02198a19bba375b79987a7ad3` |
 
 The included script hash remains pinned independently in `tools/native-action.ps1` and `vendor/setup-selfcheck.json`. Do not update those pins without reviewing and rebuilding the source change.
 

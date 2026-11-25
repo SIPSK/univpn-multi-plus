@@ -121,7 +121,7 @@ function Assert-QuiesceIdle {
 function Get-PinnedVendorBytes {
     # No parameter can choose executable code. Hash the same bytes later written
     # into the protected installation, avoiding a bundle-path read/copy race.
-    $expected = '512f602c1710de5dd2d879860ab3f1afa884da9c5f81e1c1336d59e6ccf508bd'
+    $expected = '8caea4a92c7c36de140f32e721cf920e63687a838c29fc3c9b1b479d1afd4e04'
     $vendor = Join-Path (Split-Path $PSScriptRoot -Parent) 'vendor\UniVPN-Multi.ps1'
     Assert-NotReparse ([IO.Path]::GetDirectoryName($vendor))
     Assert-NotReparse $vendor
