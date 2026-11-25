@@ -159,7 +159,11 @@ function Assert-ReadyInstance($Info,$Record) {
     $aliasItem=Get-Item -LiteralPath $Info.Alias -Force
     if($aliasItem.LinkType -ne 'Junction' -or @($aliasItem.Target).Count -ne 1 -or
         [IO.Path]::GetFullPath([string]$aliasItem.Target).TrimEnd('\') -ine $Info.Directory){throw 'Instance directory link mismatch.'}
-    $legacyVnic=$null -eq $Record.PSObject.Properties['VnicPort']
+    if($Record -is [Collections.IDictionary]){
+        $legacyVnic=-not $Record.Contains('VnicPort')
+    }else{
+        $legacyVnic=$null -eq $Record.PSObject.Properties['VnicPort']
+    }
     if(-not $legacyVnic -and $Record.VnicPort -ne $Info.VnicPort){throw 'Instance VNIC port metadata does not match.'}
     foreach($image in @(Get-Images $Info $Record.TapGuid -LegacyVnic:$legacyVnic)){
         if((Get-FileHash -LiteralPath (Join-Path $Info.Directory $image.Target)).Hash -ne $image.Hash){throw 'Instance binary verification failed.'}

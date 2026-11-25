@@ -5,6 +5,7 @@
 - Protect packaged webpages and native helper resources for the lifetime of each process so temporary-file cleanup preserves the running manager.
 - Add a save-and-connect action and an explicit disconnect, create, and restore confirmation for new connections.
 - Reuse verified idle backends during expansion, and let a disconnect retry recover after the original backend has already exited.
+- Validate new in-memory instance records with their assigned VNIC ports so successful creation is reported correctly.
 
 - Give each native clone a dedicated range of five loopback UDP ports for VNIC initialization. An existing idle clone can be repaired while other instances stay online.
 - Verified three live tunnels on the development machine after repairing one clone. Two hosts returned SSH banners through the repaired tunnel.
