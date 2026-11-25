@@ -611,7 +611,7 @@ class MultiConfigurationTests(unittest.TestCase):
         self.assertEqual(self.profile(result['id'])['index'], 0)
         self.assertEqual(self.profile(result['id'])['name'], '保留配置')
         self.assertIn('配置已保存', result['notice'])
-        self.assertIn('退出原客户端', result['notice'])
+        self.assertEqual(result['notice'], '配置已保存，点击连接继续。')
         self.assertEqual(self.bridge.creates, 0)
         self.assertEqual(self.bridge.external_disconnects, [])
 

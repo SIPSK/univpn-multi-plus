@@ -360,6 +360,7 @@ function render() {
   $('loading-state').hidden = true;
   const expanding = expansionBusy();
   $('confirm-expand').disabled = expanding;
+  $('save-connect-profile').disabled = $('save-profile').disabled || !online || expanding || !state.capabilities?.nativeAuth || Boolean(state.handoffRequired);
   $('add-profile').disabled = !online || expanding;
   $('settings-toggle').disabled = !online || settingsBusy || expanding;
   $('startup-enabled').checked = pendingStartup ?? Boolean(state.settings?.startup);
@@ -527,7 +528,10 @@ function openProfile(profile = null) {
   closeMenus();
   editingId = profile ? String(profile.id) : null;
   setText($('profile-dialog-title'), profile ? '编辑 VPN' : '添加 VPN');
-  setText($('save-profile'), profile ? '保存' : '添加');
+  setText($('save-profile'), profile ? '保存' : '仅保存');
+  $('save-profile').classList.toggle('button-primary', Boolean(profile));
+  $('save-connect-profile').hidden = Boolean(profile);
+  $('save-connect-profile').disabled = !online || !state.capabilities?.nativeAuth || Boolean(state.handoffRequired);
   $('profile-name').value = profile?.name || '';
   $('profile-gateway').value = profile?.gateway || '';
   $('profile-port').value = profile?.port || 443;
@@ -567,9 +571,12 @@ $('settings-menu').addEventListener('keydown', (event) => {
 $('profile-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (expansionBusy() || !$('profile-form').reportValidity() || $('save-profile').disabled) return;
+  const connectAfterSave = !editingId && event.submitter?.id === 'save-connect-profile';
+  if (connectAfterSave && $('save-connect-profile').disabled) return;
   const body = { name: $('profile-name').value.trim(), gateway: $('profile-gateway').value.trim(), port: Number($('profile-port').value) };
   if (!body.gateway) return $('profile-gateway').focus();
   $('save-profile').disabled = true;
+  $('save-connect-profile').disabled = true;
   $('profile-error').hidden = true;
   globalInfo = '';
   try {
@@ -577,9 +584,23 @@ $('profile-form').addEventListener('submit', async (event) => {
     if (typeof result?.notice === 'string') globalInfo = message(result.notice, '');
     $('profile-dialog').close();
     await refresh(true);
+    if (connectAfterSave) {
+      const savedId = result?.id ?? result?.profile?.id;
+      const row = savedId === undefined ? null : rows.get(String(savedId));
+      if (row && !row.action.disabled) {
+        row.node.scrollIntoView({ block: 'nearest' });
+        if (!activeStatuses.has(row.profile.status) && !row.profile.canDisconnect) onAction(row);
+      } else {
+        globalInfo = '配置已保存，请在列表中检查连接状态。';
+        render();
+      }
+    }
   } catch (error) {
     setText($('profile-error'), message(error)); $('profile-error').hidden = false;
-  } finally { $('save-profile').disabled = false; }
+  } finally {
+    $('save-profile').disabled = false;
+    render();
+  }
 });
 $('delete-form').addEventListener('submit', async (event) => {
   event.preventDefault();

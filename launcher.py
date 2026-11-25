@@ -18,6 +18,7 @@ from urllib.request import (OpenerDirector, HTTPHandler, HTTPDefaultErrorHandler
                             HTTPErrorProcessor, HTTPRedirectHandler, ProxyHandler, Request)
 
 from native_preflight import SUPPORTED_BUILD, check_client as inspect_client
+from resource_lease import ResourceLease, ResourceLeaseError
 
 
 APP_NAME = "UniVPN Manager"
@@ -398,6 +399,15 @@ def run_launcher(runtime_dir: Path, *, show_browser: bool = True) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        with ResourceLease(ROOT):
+            return _main(argv)
+    except ResourceLeaseError:
+        notify("程序资源无法读取，请重新完整解压管理器安装包。", error=True)
+        return 1
+
+
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="UniVPN local web and tray manager")
     parser.add_argument("--runtime-dir", type=Path, default=default_runtime_dir())
     parser.add_argument("--stop", action="store_true")

@@ -19,6 +19,7 @@ import time
 from urllib.parse import unquote, urlsplit
 
 from core import AppError, Manager, ROOT, VERSION
+from resource_lease import ResourceLease
 
 APP_ID = "univpn-native-manager"
 MAX_BODY = 16384
@@ -327,6 +328,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main(argv=None):
+    with ResourceLease(ROOT):
+        return _serve(argv)
+
+
+def _serve(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-dir", type=Path, default=Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "UniVPNManager")
     parser.add_argument("--port", type=int, default=0)

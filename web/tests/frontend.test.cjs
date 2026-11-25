@@ -16,6 +16,8 @@ let nativeAuth = true;
 let failSettings = false;
 let creationDelayMs = 0;
 let creationNotice = '';
+let creationResponseShape = 'profile';
+let creationAlreadyConnected = false;
 let environmentResult = { ok: true, phase: 'complete', exitCode: 0 };
 let nativeDelayMs = 0;
 let pendingNative = 0;
@@ -79,8 +81,9 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/profiles' && req.method === 'POST') {
         if (creationDelayMs) await new Promise((resolve) => setTimeout(resolve, creationDelayMs));
         const profile = { id: `vpn${nextId++}`, ...body, networkVersion: fixtureNetworkVersion, status: 'disconnected', autoConnect: false, hasSavedCredential: false };
+        if (creationAlreadyConnected) Object.assign(profile, { status: 'connected', canDisconnect: true });
         profiles.push(profile);
-        return json(res, 201, { profile, ...(creationNotice ? { notice: creationNotice } : {}) });
+        return json(res, 201, { ...(creationResponseShape === 'id' ? { id: profile.id } : { profile }), ...(creationNotice ? { notice: creationNotice } : {}) });
       }
       const match = url.pathname.match(/^\/api\/profiles\/([^/]+)(?:\/(connect|expand-connect|otp|disconnect|credential))?$/);
       const profile = profiles.find((item) => item.id === decodeURIComponent(match?.[1] || ''));
@@ -388,12 +391,13 @@ async function main() {
     await page.getByLabel('名称（选填）', { exact: true }).fill('<img src=x onerror="window.bad=1">');
     await page.getByLabel('网关', { exact: true }).fill('vpn.example.com');
     await page.getByLabel('端口', { exact: true }).fill('49999');
-    await page.locator('#profile-dialog').getByRole('button', { name: '添加', exact: true }).click();
+    await page.locator('#profile-dialog').getByRole('button', { name: '仅保存', exact: true }).click();
     await row('vpn3').waitFor();
     assert.equal(await row('vpn3').locator('img').count(), 0);
     assert.equal(await page.evaluate(() => window.bad), undefined);
     await row('vpn3').locator('.more-button').click();
     await row('vpn3').getByRole('menuitem', { name: '编辑', exact: true }).click();
+    assert.equal(await page.locator('#save-connect-profile').isVisible(), false);
     await page.getByLabel('名称（选填）', { exact: true }).fill('研究 VPN');
     await page.locator('#profile-dialog').getByRole('button', { name: '保存', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('[data-profile-id="vpn3"] .vpn-name')?.textContent === '研究 VPN · vpn.example.com:49999');
@@ -410,8 +414,11 @@ async function main() {
     await page.getByRole('button', { name: '添加', exact: true }).click();
     assert.equal(await page.getByLabel('名称（选填）', { exact: true }).evaluate((input) => input.required), false);
     await page.getByLabel('网关', { exact: true }).fill('192.0.2.123');
-    await page.locator('#profile-dialog').getByRole('button', { name: '添加', exact: true }).click();
+    const connectsBeforeEnterSave = connectCount();
+    await page.getByLabel('网关', { exact: true }).press('Enter');
     await row('vpn4').waitFor();
+    assert.equal(connectCount(), connectsBeforeEnterSave);
+    assert.equal(await row('vpn4').locator('.auth-panel').count(), 0);
     assert.equal(await row('vpn4').locator('.vpn-name').textContent(), '192.0.2.123:443');
     assert.equal(calls.find((call) => call.method === 'POST' && call.path === '/api/profiles' && call.body.gateway === '192.0.2.123').body.name, '');
     await row('vpn4').locator('.more-button').click();
@@ -424,7 +431,7 @@ async function main() {
     const createsBeforeWaiting = calls.filter((call) => call.method === 'POST' && call.path === '/api/profiles').length;
     await page.getByRole('button', { name: '添加', exact: true }).click();
     await page.getByLabel('网关', { exact: true }).fill('192.0.2.124');
-    await page.locator('#profile-dialog').getByRole('button', { name: '添加', exact: true }).click();
+    await page.locator('#profile-dialog').getByRole('button', { name: '仅保存', exact: true }).click();
     assert.equal(await page.locator('#save-profile').isDisabled(), true);
     await page.waitForTimeout(100);
     assert.equal(calls.filter((call) => call.method === 'POST' && call.path === '/api/profiles').length, createsBeforeWaiting + 1);
@@ -489,6 +496,10 @@ async function main() {
     nativeAuth = false;
     await page.locator('#notice').filter({ hasText: '网页登录尚未就绪' }).waitFor();
     assert.equal(await row('a5').locator('.row-action').isDisabled(), true);
+    await page.getByRole('button', { name: '添加', exact: true }).click();
+    assert.equal(await page.locator('#save-connect-profile').isDisabled(), true);
+    assert.equal(await page.locator('#save-profile').isDisabled(), false);
+    await page.keyboard.press('Escape');
     passed('Unavailable native authentication is not represented as working');
     nativeAuth = true;
     await page.waitForFunction(() => document.querySelector('#notice').hidden);
@@ -509,6 +520,8 @@ async function main() {
     await page.keyboard.press('Enter');
     await page.locator('#profile-dialog[open]').waitFor();
     assert.equal(await page.getByLabel('网关', { exact: true }).evaluate((input) => document.activeElement === input), true);
+    assert.equal(await page.locator('#save-connect-profile').isVisible(), true);
+    assert.equal(await page.locator('#profile-dialog').evaluate((dialog) => dialog.scrollWidth <= dialog.clientWidth), true);
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#profile-dialog').getAttribute('open'), null);
     passed('Narrow screens and keyboard dialog navigation work');
@@ -545,7 +558,7 @@ async function main() {
     await page.getByRole('button', { name: '添加', exact: true }).click();
     await page.getByLabel('网关', { exact: true }).fill('192.0.2.50');
     await page.getByLabel('名称（选填）', { exact: true }).fill('记住新配置');
-    await page.locator('#profile-dialog').getByRole('button', { name: '添加', exact: true }).click();
+    await page.locator('#profile-dialog').getByRole('button', { name: '仅保存', exact: true }).click();
     await row('vpn6').waitFor();
     await page.locator('#notice').filter({ hasText: '配置已保存，连接环境创建未完成' }).waitFor();
     assert.equal(await row('vpn6').locator('.vpn-name').textContent(), '记住新配置 · 192.0.2.50:443');
@@ -554,6 +567,61 @@ async function main() {
     assert.equal(calls.filter((call) => call.path === '/api/profiles' && call.method === 'POST').length, createAttemptsBeforeSavedOnly + 1);
     creationNotice = '';
     passed('A saved configuration survives an incomplete environment operation with a plain notice and no automatic retry');
+
+    creationResponseShape = 'id';
+    creationDelayMs = 800;
+    const directCreatedId = `vpn${nextId}`;
+    const createsBeforeSaveConnect = calls.filter((call) => call.path === '/api/profiles' && call.method === 'POST').length;
+    const connectsBeforeSaveConnect = connectCount();
+    await page.getByRole('button', { name: '添加', exact: true }).click();
+    await page.getByLabel('网关', { exact: true }).fill('192.0.2.90');
+    await page.getByLabel('名称（选填）', { exact: true }).fill('保存后连接');
+    await page.locator('#save-connect-profile').click();
+    assert.equal(await page.locator('#save-profile').isDisabled(), true);
+    assert.equal(await page.locator('#save-connect-profile').isDisabled(), true);
+    await row(directCreatedId).getByLabel('账号', { exact: true }).waitFor();
+    creationDelayMs = 0;
+    assert.equal(await row(directCreatedId).getByLabel('账号', { exact: true }).inputValue(), '');
+    assert.equal(await row(directCreatedId).getByLabel('密码', { exact: true }).inputValue(), '');
+    assert.equal(connectCount(), connectsBeforeSaveConnect);
+    assert.equal(calls.filter((call) => call.path === '/api/profiles' && call.method === 'POST').length, createsBeforeSaveConnect + 1);
+    assert.deepEqual(calls.filter((call) => call.path === '/api/profiles' && call.method === 'POST').at(-1).body,
+      { name: '保存后连接', gateway: '192.0.2.90', port: 443 });
+    await row(directCreatedId).getByLabel('账号', { exact: true }).fill('save-connect-test-account');
+    await row(directCreatedId).getByLabel('密码', { exact: true }).fill('save-connect-test-password-only');
+    await row(directCreatedId).locator('.auth-panel').getByRole('button', { name: '连接', exact: true }).click();
+    await page.waitForFunction((id) => document.querySelector(`[data-profile-id="${id}"]`)?.dataset.status === 'connected', directCreatedId);
+    assert.equal(connectCount(), connectsBeforeSaveConnect + 1);
+    assert.ok(calls.some((call) => call.path === `/api/profiles/${directCreatedId}/connect` && call.body.networkVersion === fixtureNetworkVersion));
+    passed('Save and connect accepts the backend id response and opens only the saved profile login before one explicit authentication');
+
+    creationResponseShape = 'profile';
+    const nestedCreatedId = `vpn${nextId}`;
+    await page.getByRole('button', { name: '添加', exact: true }).click();
+    await page.getByLabel('网关', { exact: true }).fill('192.0.2.91');
+    await page.locator('#save-connect-profile').click();
+    await row(nestedCreatedId).getByLabel('账号', { exact: true }).waitFor();
+    assert.equal(await row(nestedCreatedId).getByLabel('密码', { exact: true }).inputValue(), '');
+    assert.equal(await page.locator('#profile-dialog').getAttribute('open'), null);
+    assert.equal(await row(directCreatedId).locator('.auth-panel').count(), 0);
+    assert.equal(connectCount(), connectsBeforeSaveConnect + 1);
+    await row(nestedCreatedId).locator('.auth-panel').getByRole('button', { name: '取消登录', exact: true }).click();
+    passed('Save and connect also accepts a nested profile response without connecting another row');
+
+    creationAlreadyConnected = true;
+    const externallyConnectedId = `vpn${nextId}`;
+    const disconnectsBeforeSavedConnection = calls.filter((call) => call.path.endsWith('/disconnect')).length;
+    await page.getByRole('button', { name: '添加', exact: true }).click();
+    await page.getByLabel('网关', { exact: true }).fill('192.0.2.92');
+    await page.locator('#save-connect-profile').click();
+    await row(externallyConnectedId).waitFor();
+    await page.waitForFunction(() => !document.querySelector('#save-profile').disabled);
+    creationAlreadyConnected = false;
+    assert.equal(profiles.find((profile) => profile.id === externallyConnectedId).status, 'connected');
+    assert.equal(calls.filter((call) => call.path.endsWith('/disconnect')).length, disconnectsBeforeSavedConnection);
+    assert.equal(connectCount(), connectsBeforeSaveConnect + 1);
+    assert.equal(await row(externallyConnectedId).locator('.auth-panel').count(), 0);
+    passed('Save and connect preserves a connection that another window established before the state refresh');
 
     expansionTarget = 'expansion-target';
     profiles.push({ id: expansionTarget, name: '新增连接', gateway: '192.0.2.80', port: 443,
@@ -567,7 +635,8 @@ async function main() {
     await page.locator('#expand-dialog[open]').waitFor();
     assert.equal(expandCount(), expandsBeforeCancel);
     assert.equal(disconnectCount(), disconnectsBeforeCancel);
-    assert.equal(await page.locator('#expand-dialog-message').textContent(), '新增并发连接需要暂时断开当前连接，创建后恢复；动态口令需你填写。');
+    assert.equal(await page.locator('#expand-dialog-message').textContent(), '继续后将暂时断开本管理器的现有连接，创建新连接环境，再尝试恢复原连接并连接此 VPN。动态口令仍需你填写。');
+    assert.equal(await page.locator('#confirm-expand').textContent(), '断开并继续');
     await page.screenshot({ path: path.join(artifacts, 'expansion-confirmation.png') });
     expansionInProgress = true;
     await page.waitForFunction(() => document.querySelector('#confirm-expand').disabled);
@@ -725,7 +794,7 @@ async function main() {
     assert.deepEqual(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) })), { local: [], session: [] });
     assert.ok(calls.filter((call) => call.path !== '/api/bootstrap').every((call) => call.hasToken));
     assert.equal(pageErrors.length, 0);
-    const privateValues = ['frontend-test-only', '830461', 'saved-test-password-only', 'updated-test-password-only', 'long-native-test-password-only', 'do-not-keep-on-target-change', 'new-slot-test-password-only', 'confirmation-closure-password-only', 'old-endpoint-test-password-only', 'form-snapshot-test-password-only', token];
+    const privateValues = ['frontend-test-only', '830461', 'saved-test-password-only', 'updated-test-password-only', 'long-native-test-password-only', 'do-not-keep-on-target-change', 'save-connect-test-password-only', 'new-slot-test-password-only', 'confirmation-closure-password-only', 'old-endpoint-test-password-only', 'form-snapshot-test-password-only', token];
     assert.ok(consoleMessages.every((entry) => privateValues.every((value) => !entry.includes(value))));
     passed('No credentials or tokens are stored or logged; API requests carry the token');
 

@@ -16,6 +16,8 @@ The manager-only package requires the matching official client already installed
 
 All valid old configurations are imported with their original display names and independent IDs. Duplicate names or endpoints do not overwrite each other. On the first handoff, disconnect and exit original clients yourself; opening this tool does not forcibly disconnect them. Later, reopening the page leaves its managed connections running.
 
+When adding a profile, choose **Save only** or **Save and connect**. If another instance is needed, the confirmation can disconnect managed sessions, create the instance, and attempt each saved connection once before connecting the new VPN. Dynamic-token challenges wait for user input.
+
 Click **Connect** to use a configuration. Its assigned resource stays reserved. When another instance is needed, the upstream native creation flow is used. If managed connections are online, a confirmation precedes temporary disconnection, one creation attempt, and one restoration attempt per saved connection. Cancel leaves connections alone. External or unknown connections, unfinished authentication, or missing saved credentials stop the process before interruption. Dynamic tokens remain user input, with no authentication retry loop.
 
 Native saved passwords can only be reused in their original instance. A different assigned instance opens a blank login form when needed. **Save password** stores newly saved credentials in the current user's Windows Credential Manager. Per-connection automatic login and Windows login startup are separate, optional settings, initially off.

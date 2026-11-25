@@ -511,7 +511,7 @@ class Manager:
                 except Exception:
                     notice = "配置已保存，连接环境创建未完成；全部退出后可再次手动连接。"
             else:
-                notice = "配置已保存，请先断开所有 VPN 并退出原客户端；首次连接时会自动创建所需环境。"
+                notice = "配置已保存，点击连接继续。"
             if notice:
                 self._warnings[profile["id"]] = notice
         if needs_creation:
@@ -893,6 +893,24 @@ class Manager:
                 except Exception:
                     pass
                 process_rows.append(row)
+            idle_owned = []
+            owns_backend = getattr(self.bridge, "owns_backend", None)
+            for row in process_rows:
+                if row.get("name") in owned_backends:
+                    continue
+                if sum(p.get("name") == row.get("name") for p in process_rows) != 1:
+                    continue
+                for profile in self.profiles:
+                    if not profile["index"] or profile["id"] in self.sessions or self._slot_busy(profile["index"]):
+                        continue
+                    try:
+                        verified = callable(owns_backend) and owns_backend(profile, row) is True
+                    except Exception:
+                        verified = False
+                    if verified:
+                        idle_owned.append(dict(profile))
+                        owned_backends.add(row["name"])
+                        break
             if any(p.get("name") not in owned_backends for p in process_rows):
                 raise AppError("检测到其他客户端，请先退出后再新增连接", 409)
             if any(self._remote_peer(p) and p.get("process") not in owned_backends for p in self.inventory.get("peers", [])):
@@ -951,7 +969,7 @@ class Manager:
                     # to exit. Only the bridge may release its verified owned
                     # backend, and only after a normal tunnel disconnect.
                     quiesce = getattr(self.bridge, "quiesce_owned", None)
-                    for profile in stopped:
+                    for profile in stopped + idle_owned:
                         if callable(quiesce):
                             quiesce(profile)
                     self._wait_expansion_idle(operation)

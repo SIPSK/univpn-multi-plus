@@ -177,7 +177,15 @@ class WindowsSession:
             if worker.is_alive():
                 raise SessionError('原生连接仍在结束，请稍后重试')
             if self._cleanup_confirmed is False:
-                raise SessionError('原生连接的断开尚未确认，请检查客户端')
+                confirm = getattr(self.environment, 'confirm_disconnected', None)
+                try:
+                    ended = callable(confirm) and confirm(dict(self.profile)) is True
+                except Exception:
+                    ended = False
+                if not ended:
+                    raise SessionError('原生连接的断开尚未确认，请检查客户端')
+                self._cleanup_confirmed = True
+                self._done.set()
             if self._done.is_set():
                 self._publish({'status': 'disconnected'})
         elif worker is None:

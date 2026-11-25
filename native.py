@@ -492,6 +492,43 @@ class NativeBridge:
         except (AppError, KeyError, TypeError):
             return False
 
+    def confirm_disconnected(self, profile):
+        """Observe an already-ended target after an unacknowledged cleanup."""
+        try:
+            product, _, _ = self._paths(profile["index"])
+            with self._lock:
+                if profile["id"] in self._anchors:
+                    return False
+                prepared = dict(self._prepared.get(profile["id"], {}))
+            inventory = self._inventory()
+            if (inventory.get("installed") is not True or inventory.get("metadataUnknown")
+                    or any(not isinstance(inventory.get(key), list)
+                           or any(not isinstance(row, dict) for row in inventory[key])
+                           for key in ("records", "adapters", "processes", "peers"))):
+                return False
+            processes = inventory["processes"]
+            if any(not isinstance(row.get("name"), str) or type(row.get("pid")) is not int
+                   for row in processes):
+                return False
+            if any(row["name"].casefold().removesuffix(".exe") in {product.casefold(), (product + "CS").casefold()}
+                   or row["pid"] == prepared.get("backend_pid") for row in processes):
+                return False
+            if any(not isinstance(row.get("process"), str)
+                   or row["process"].casefold().removesuffix(".exe") == (product + "CS").casefold()
+                   for row in inventory["peers"]):
+                return False
+            if profile["index"] > 1:
+                records = [row for row in inventory["records"] if row.get("index") == profile["index"]]
+                if (len(records) != 1 or records[0].get("status") != "Ready"
+                        or not isinstance(records[0].get("tapGuid"), str) or not records[0]["tapGuid"]):
+                    return False
+            adapters = self._target_adapters(profile["index"], inventory)
+            return (len(adapters) == 1 and isinstance(adapters[0].get("guid"), str)
+                    and bool(adapters[0]["guid"]) and adapters[0].get("up") is False)
+        except Exception:
+            # No discovery/start/attach/kill action is part of this observation.
+            return False
+
     def quiesce_owned(self, profile):
         """Release only our already logged-out backend before confirmed expansion."""
         product = _product(profile["index"])

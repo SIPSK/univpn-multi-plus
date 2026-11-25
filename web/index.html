@@ -47,7 +47,8 @@
       <p id="profile-error" class="form-error" role="alert" hidden></p>
       <div class="dialog-actions">
         <button class="button button-quiet" type="button" data-close-dialog>取消</button>
-        <button id="save-profile" class="button button-primary" type="submit">添加</button>
+        <button id="save-profile" class="button" type="submit">仅保存</button>
+        <button id="save-connect-profile" class="button button-primary" type="submit">保存并连接</button>
       </div>
     </form>
   </dialog>
@@ -66,11 +67,11 @@
 
   <dialog id="expand-dialog" class="dialog" aria-labelledby="expand-dialog-title" aria-describedby="expand-dialog-message">
     <form method="dialog">
-      <h2 id="expand-dialog-title">新增并发连接？</h2>
-      <p id="expand-dialog-message" class="delete-name">新增并发连接需要暂时断开当前连接，创建后恢复；动态口令需你填写。</p>
+      <h2 id="expand-dialog-title">新增连接并自动恢复？</h2>
+      <p id="expand-dialog-message" class="delete-name">继续后将暂时断开本管理器的现有连接，创建新连接环境，再尝试恢复原连接并连接此 VPN。动态口令仍需你填写。</p>
       <div class="dialog-actions">
         <button id="cancel-expand" class="button button-quiet" type="submit" value="cancel">取消</button>
-        <button id="confirm-expand" class="button button-primary" type="submit" value="confirm">继续</button>
+        <button id="confirm-expand" class="button button-primary" type="submit" value="confirm">断开并继续</button>
       </div>
     </form>
   </dialog>

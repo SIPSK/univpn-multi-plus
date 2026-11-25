@@ -1,5 +1,6 @@
 """Pure fixtures for the privileged bridge. No native action is executed."""
 from pathlib import Path
+from copy import deepcopy
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import json
@@ -248,6 +249,100 @@ class BridgeTests(unittest.TestCase):
         self.assertFalse(self.bridge.validate_backend({'id': 'p', 'index': 1}, 35000))
         self.bridge._inventory = Mock(return_value={**valid, 'listeners': [{**valid['listeners'][0], 'address': '0.0.0.0'}]})
         self.assertFalse(self.bridge.validate_backend({'id': 'p', 'index': 1}, 35000))
+
+    def disconnected_fixture(self):
+        profile = {'id': 'p', 'index': 2}
+        inventory = {
+            'installed': True,
+            'records': [{'index': 2, 'status': 'Ready', 'tapGuid': '{TARGET}'},
+                        {'index': 3, 'status': 'Ready', 'tapGuid': '{OTHER}'}],
+            'adapters': [{'guid': '{TARGET}', 'up': False, 'addresses': []},
+                         {'guid': '{OTHER}', 'up': True, 'addresses': ['192.0.2.3']}],
+            'processes': [{'name': 'UVP003CS', 'pid': 303}],
+            'peers': [{'process': 'UVP003CS', 'gateway': '192.0.2.3', 'port': 443}],
+        }
+        self.bridge._paths = Mock(return_value=('UVP002', self.bridge.source, self.bridge.source))
+        self.bridge._action = Mock(side_effect=AssertionError('no native action allowed'))
+        self.bridge._inventory = Mock(return_value=inventory)
+        return profile, inventory
+
+    def test_confirm_disconnected_observes_only_the_target_and_preserves_other_active_instances(self):
+        profile, inventory = self.disconnected_fixture()
+        self.bridge._prepared['p'] = {'backend_pid': 202, 'service_pid': 102}
+        before = deepcopy(inventory)
+        self.assertTrue(self.bridge.confirm_disconnected(profile))
+        self.bridge._paths.assert_called_once_with(2)
+        self.bridge._inventory.assert_called_once_with()
+        self.bridge._action.assert_not_called()
+        self.assertEqual(inventory, before)
+        self.assertEqual(self.bridge._prepared['p'], {'backend_pid': 202, 'service_pid': 102})
+
+    def test_confirm_disconnected_refuses_any_remaining_target_client_backend_or_peer(self):
+        profile, original = self.disconnected_fixture()
+        cases = []
+        for name in ('UVP002', 'UVP002CS', 'uvp002cs.exe'):
+            inventory = deepcopy(original)
+            inventory['processes'].append({'name': name, 'pid': 202})
+            cases.append(inventory)
+        for name in ('UVP002CS', 'uvp002cs.exe'):
+            inventory = deepcopy(original)
+            inventory['peers'].append({'process': name, 'gateway': '127.0.0.1', 'port': 19061})
+            cases.append(inventory)
+        for inventory in cases:
+            with self.subTest(inventory=inventory):
+                self.bridge._inventory.return_value = inventory
+                self.assertFalse(self.bridge.confirm_disconnected(profile))
+        self.bridge._action.assert_not_called()
+
+    def test_confirm_disconnected_refuses_unknown_or_active_target_metadata(self):
+        profile, original = self.disconnected_fixture()
+        cases = [{**original, 'installed': False}, {**original, 'metadataUnknown': True},
+                 {**original, 'processes': [{'name': 'UVP003CS'}]},
+                 {**original, 'processes': [{'pid': 303}]},
+                 {**original, 'peers': [{}]},
+                 {**original, 'records': original['records'] + [original['records'][0]]},
+                 {**original, 'records': [{'index': 2, 'status': 'Failed', 'tapGuid': '{TARGET}'}]},
+                 {**original, 'adapters': original['adapters'] + [original['adapters'][0]]},
+                 {**original, 'adapters': original['adapters'][1:]}]
+        for up in (True, None, 0, 'Disconnected'):
+            inventory = deepcopy(original)
+            inventory['adapters'][0]['up'] = up
+            cases.append(inventory)
+        for key in ('records', 'adapters', 'processes', 'peers'):
+            inventory = deepcopy(original)
+            del inventory[key]
+            cases.append(inventory)
+            cases.append({**original, key: [None]})
+        for inventory in cases:
+            with self.subTest(inventory=inventory):
+                self.bridge._inventory.return_value = inventory
+                self.assertFalse(self.bridge.confirm_disconnected(profile))
+        self.bridge._action.assert_not_called()
+
+    def test_confirm_disconnected_refuses_retained_anchor_or_reused_prepared_pid_and_handles_errors(self):
+        profile, _ = self.disconnected_fixture()
+        self.bridge._anchors['p'] = object()
+        self.assertFalse(self.bridge.confirm_disconnected(profile))
+        self.bridge._inventory.assert_not_called()
+        self.bridge._anchors.clear()
+        self.bridge._prepared['p'] = {'backend_pid': 303}
+        self.assertFalse(self.bridge.confirm_disconnected(profile))
+        self.bridge._prepared.clear()
+        self.bridge._inventory.side_effect = OSError('synthetic observation failure')
+        self.assertFalse(self.bridge.confirm_disconnected(profile))
+        self.bridge._paths.side_effect = AppError('synthetic file mismatch')
+        self.assertFalse(self.bridge.confirm_disconnected(profile))
+        self.bridge._action.assert_not_called()
+
+    def test_confirm_original_disconnected_requires_one_unmanaged_offline_tap(self):
+        profile, inventory = self.disconnected_fixture()
+        profile['index'] = 1
+        self.bridge._paths.return_value = ('UniVPN', self.bridge.source, self.bridge.source)
+        inventory['adapters'].append({'guid': '{ORIGINAL}', 'up': False, 'addresses': []})
+        self.assertTrue(self.bridge.confirm_disconnected(profile))
+        inventory['adapters'].append({'guid': '{AMBIGUOUS}', 'up': False, 'addresses': []})
+        self.assertFalse(self.bridge.confirm_disconnected(profile))
+        self.bridge._action.assert_not_called()
 
 
 if __name__ == '__main__':

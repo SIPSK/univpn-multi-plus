@@ -32,7 +32,7 @@ SOURCE_HASHES = {
 REQUIRED = ("launcher.py", "tray.py", "server.py", "core.py", "Start.bat", "Stop.bat",
             "Setup.bat", "setup.py", "vendor_state.py", "vendor_config.py", "README.zh.md", "README.md",
             "LICENSE", "THIRD_PARTY_NOTICES.md",
-            "native.py", "windows_messages.py", "windows_session.py", "session_anchor.py", "native_preflight.py", "credential_store.py", "startup.py",
+            "native.py", "windows_messages.py", "windows_session.py", "session_anchor.py", "resource_lease.py", "native_preflight.py", "credential_store.py", "startup.py",
             "web/index.html", "web/app.js", "web/style.css", "tools/inspect.ps1", "tools/native-action.ps1",
             "vendor/UniVPN-Multi.ps1", "vendor/LICENSE.univpn-multi", "vendor/setup-selfcheck.json")
 

@@ -125,6 +125,41 @@ class ExpansionTests(unittest.TestCase):
         self.assertEqual(self.bridge.creates, 1)
         self.assertEqual(set(self.manager.sessions), {first, second, target})
 
+    def test_confirm_releases_previously_disconnected_owned_backend(self):
+        first, second, target = self.ready()
+        self.manager.disconnect(first)
+        self.bridge.owns_backend = lambda profile, row: (
+            row.get('name') == ('UniVPNCS' if profile['index'] == 1 else f"UVP{profile['index']:03d}CS")
+            and row.get('pid') == profile['index'] + 1000
+        )
+        self.manager.expand_connect(target, {'username': fixture.USER, 'password': fixture.PASSWORD})
+        self.assertEqual(self.bridge.quiesced, [second, first])
+        self.assertEqual(self.bridge.creates, 1)
+        self.assertEqual([s.profile['id'] for s in self.bridge.sessions], [first, second, second, target])
+        self.assertNotIn(first, self.manager.sessions)
+        self.assertEqual(self.bridge.external_disconnects, [])
+
+    def test_unverified_idle_backend_is_retained_before_interrupting_sessions(self):
+        first, _, target = self.ready()
+        self.manager.disconnect(first)
+        self.bridge.owns_backend = lambda profile, row: False
+        with self.assertRaises(AppError):
+            self.manager.expand_connect(target, {})
+        self.assertEqual(self.bridge.quiesced, [])
+        self.assertEqual(self.bridge.creates, 0)
+        self.assertEqual([s.disconnects for s in self.bridge.sessions], [1, 0])
+
+    def test_duplicate_idle_backend_identity_is_retained(self):
+        first, _, target = self.ready()
+        self.manager.disconnect(first)
+        self.manager.inventory['processes'].append({'name': 'UniVPNCS', 'pid': 9999})
+        self.bridge.owns_backend = lambda profile, row: profile['id'] == first and row.get('pid') == 1001
+        with self.assertRaises(AppError):
+            self.manager.expand_connect(target, {})
+        self.assertEqual(self.bridge.quiesced, [])
+        self.assertEqual(self.bridge.creates, 0)
+        self.assertEqual([s.disconnects for s in self.bridge.sessions], [1, 0])
+
     def test_source_one_cache_never_crosses_into_assigned_clone_three(self):
         _, _, target = self.ready()
         self.bridge.sources = [fixture.source('x', '192.0.2.30')]

@@ -91,7 +91,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: -.2px; }
 .dialog-heading .icon-button { margin: -5px -7px -5px 10px; }
 .gateway-fields { display: grid; grid-template-columns: minmax(0, 1fr) 83px; gap: 13px; }
 .dialog .form-error { margin: 15px 0 0; }
-.dialog-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 27px; }
+.dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; margin-top: 27px; }
 .dialog-small { width: min(350px, calc(100% - 32px)); }
 .delete-name { margin: 15px 0 0; font-size: 14px; color: #78818d; overflow-wrap: anywhere; }
 @media (max-width: 560px) {

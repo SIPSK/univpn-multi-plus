@@ -8,7 +8,9 @@ import struct
 import sys
 import threading
 import time
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -249,6 +251,152 @@ class FastSession(WindowsSession):
     OTP_TIMEOUT = 3
     TARGET_WAIT_TIMEOUT = 0.2
     CLEANUP_TIMEOUT = 0.3
+
+
+class RetryWorker:
+    """A deterministic worker state; starts no thread or socket."""
+    ident = 12345
+
+    def __init__(self, *, alive=False):
+        self.alive = alive
+        self.joins = []
+        self.alive_checks = 0
+
+    def join(self, timeout):
+        self.joins.append(timeout)
+
+    def is_alive(self):
+        self.alive_checks += 1
+        return self.alive
+
+
+class MetadataOnlyEnvironment:
+    def __init__(self, result=True):
+        self.result = result
+        self.confirmations = []
+        self.mutate_copy = False
+
+    def confirm_disconnected(self, profile):
+        self.confirmations.append(dict(profile))
+        if self.mutate_copy:
+            profile['gateway'] = 'changed-only-in-metadata-fixture.invalid'
+            profile['index'] = 999
+        if isinstance(self.result, BaseException):
+            raise self.result
+        return self.result
+
+    def prepare(self, *_):
+        raise AssertionError('disconnect retry must not prepare or restart a backend')
+
+
+class DisconnectRetryTests(unittest.TestCase):
+    def setUp(self):
+        self.no_socket = patch('windows_session.socket.create_connection',
+                               side_effect=AssertionError('metadata retry must not open a connection'))
+        self.no_socket.start()
+        self.addCleanup(self.no_socket.stop)
+
+    def make_session(self, environment, *, alive=False, cleanup=False, done=False):
+        history = []
+        session = FastSession({'id': 'retry-fixture', 'index': 9,
+                               'gateway': '192.0.2.90', 'port': 443}, history.append, environment)
+        worker = RetryWorker(alive=alive)
+        session._worker = worker
+        session._cleanup_confirmed = cleanup
+        session._status = {'status': 'error', 'error': 'previous cleanup was not confirmed'}
+        if done:
+            session._done.set()
+        return session, worker, history
+
+    def assert_unconfirmed(self, session, worker, history, before):
+        self.assertEqual(session.status_snapshot(), before)
+        self.assertIs(session._cleanup_confirmed, False)
+        self.assertFalse(session._done.is_set())
+        self.assertIs(session._worker, worker)
+        self.assertEqual(history, [])
+        self.assertEqual(worker.alive_checks, 1)
+        self.assertEqual(len(worker.joins), 1)
+
+    def test_dead_worker_retry_accepts_fresh_exact_true_without_restarting(self):
+        environment = MetadataOnlyEnvironment(True)
+        environment.mutate_copy = True
+        session, worker, history = self.make_session(environment)
+        original = dict(session.profile)
+        session.disconnect()
+        self.assertEqual(environment.confirmations, [original])
+        self.assertEqual(session.profile, original)
+        self.assertIs(session._cleanup_confirmed, True)
+        self.assertTrue(session._done.is_set())
+        self.assertTrue(session._stop.is_set())
+        self.assertIs(session._worker, worker)
+        self.assertEqual(worker.alive_checks, 1)
+        self.assertEqual(len(worker.joins), 1)
+        self.assertEqual(history, [{'status': 'disconnected'}])
+        self.assertEqual(session.status_snapshot(), {'status': 'disconnected'})
+
+    def test_false_or_truthy_nonboolean_metadata_does_not_confirm_dead_worker_cleanup(self):
+        for value in (False, None, 1, 'true', {'disconnected': True}):
+            with self.subTest(value=value):
+                environment = MetadataOnlyEnvironment(value)
+                session, worker, history = self.make_session(environment)
+                before = session.status_snapshot()
+                with self.assertRaisesRegex(SessionError, '断开尚未确认'):
+                    session.disconnect()
+                self.assert_unconfirmed(session, worker, history, before)
+                self.assertEqual(environment.confirmations, [session.profile])
+
+    def test_missing_noncallable_or_raising_confirmation_retains_unconfirmed_state(self):
+        private_error = 'fixture-private-metadata-error'
+        cases = (
+            ('missing', SimpleNamespace()),
+            ('noncallable', SimpleNamespace(confirm_disconnected=True)),
+            ('raising', MetadataOnlyEnvironment(RuntimeError(private_error))),
+        )
+        for label, environment in cases:
+            with self.subTest(kind=label):
+                session, worker, history = self.make_session(environment)
+                before = session.status_snapshot()
+                with self.assertRaisesRegex(SessionError, '断开尚未确认') as caught:
+                    session.disconnect()
+                self.assertNotIn(private_error, str(caught.exception))
+                self.assert_unconfirmed(session, worker, history, before)
+                if label == 'raising':
+                    self.assertEqual(environment.confirmations, [session.profile])
+
+    def test_active_worker_never_uses_metadata_to_bypass_an_unfinished_cleanup(self):
+        environment = MetadataOnlyEnvironment(True)
+        session, worker, history = self.make_session(environment, alive=True)
+        before = session.status_snapshot()
+        with self.assertRaisesRegex(SessionError, '仍在结束'):
+            session.disconnect()
+        self.assert_unconfirmed(session, worker, history, before)
+        self.assertEqual(environment.confirmations, [])
+
+    def test_already_confirmed_cleanup_publishes_disconnected_without_another_probe(self):
+        environment = MetadataOnlyEnvironment(RuntimeError('metadata must not be queried'))
+        session, worker, history = self.make_session(environment, cleanup=True, done=True)
+        session.disconnect()
+        self.assertEqual(environment.confirmations, [])
+        self.assertIs(session._cleanup_confirmed, True)
+        self.assertEqual(session.status_snapshot(), {'status': 'disconnected'})
+        self.assertEqual(history, [{'status': 'disconnected'}])
+        self.assertEqual(len(worker.joins), 1)
+
+    def test_only_a_later_explicit_retry_checks_metadata_again_and_can_succeed(self):
+        environment = MetadataOnlyEnvironment(False)
+        session, worker, history = self.make_session(environment)
+        with self.assertRaises(SessionError):
+            session.disconnect()
+        self.assertEqual(len(environment.confirmations), 1)
+        self.assertEqual(history, [])
+        self.assertIs(session._cleanup_confirmed, False)
+        environment.result = True
+        session.disconnect()
+        self.assertEqual(len(environment.confirmations), 2)
+        self.assertEqual(len(worker.joins), 2)
+        self.assertEqual(history, [{'status': 'disconnected'}])
+        self.assertIs(session._cleanup_confirmed, True)
+        self.assertTrue(session._done.is_set())
 
 
 class SessionTests(unittest.TestCase):
